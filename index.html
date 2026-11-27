@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kapsamlı Sözlük | EN - TR / TR - EN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function SozlukUygulamasi() {
+            const [kelime, setKelime] = React.useState('');
+            const [yon, setYon] = React.useState('en-tr'); // 'en-tr' veya 'tr-en'
+            const [yukleniyor, setYukleniyor] = React.useState(false);
+            const [sonuc, setSonuc] = React.useState(null);
+            const [hata, setHata] = React.useState('');
+
+            const turCevir = {
+                noun: 'İsim (n.)',
+                verb: 'Fiil (v.)',
+                adjective: 'Sıfat (adj.)',
+                adverb: 'Zarf (adv.)',
+                pronoun: 'Zamir (pron.)',
+                preposition: 'Edat (prep.)',
+                conjunction: 'Bağlaç (conj.)',
+                interjection: 'Ünlem (int.)'
+            };
+
+            const yonDegistir = () => {
+                setYon(yon === 'en-tr' ? 'tr-en' : 'en-tr');
+                setSonuc(null);
+                setHata('');
+            };
+
+            const sesCal = (sesUrl) => {
+                if (sesUrl) {
+                    new Audio(sesUrl).play();
+                } else {
+                    const konusma = new SpeechSynthesisUtterance(sonuc.aranan);
+                    konusma.lang = yon === 'en-tr' ? 'en-US' : 'tr-TR';
+                    window.speechSynthesis.speak(konusma);
+                }
+            };
+
+            const ara = async (e) => {
+                if (e) e.preventDefault();
+                const arananKelime = kelime.trim().toLowerCase();
+                if (!arananKelime) return;
+
+                setYukleniyor(true);
+                setHata('');
+                setSonuc(null);
+
+                try {
+                    const dilCifti = yon === 'en-tr' ? 'en|tr' : 'tr|en';
+                    
+                    // 1. Adım: Tüm anlamları ve alternatif çevirileri çek
+                    const ceviriYanit = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(arananKelime)}&langpair=${dilCifti}`);
+                    const ceviriVeri = await ceviriYanit.json();
+
+                    const anaCeviri = ceviriVeri.responseData?.translatedText || '';
+                    const alternatifler = (ceviriVeri.matches || [])
+                        .map(m => m.translation.trim())
+                        .filter((v, i, a) => v && v.toLowerCase() !== arananKelime && a.indexOf(v) === i)
+                        .slice(0, 8);
+
+                    // Sözlük detayı için İngilizce kelimeyi belirle
+                    const ingilizceKelime = yon === 'en-tr' ? arananKelime : anaCeviri.split(' ')[0].replace(/[^a-zA-Z-]/g, '').toLowerCase();
+
+                    // 2. Adım: Sözlük detaylarını (kelime türü, fonetik, örnek cümleler, eş anlamlılar) çek
+                    let sozlukDetay = null;
+                    if (ingilizceKelime) {
+                        const dictYanit = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(ingilizceKelime)}`);
+                        if (dictYanit.ok) {
+                            const dictVeri = await dictYanit.json();
+                            sozlukDetay = dictVeri[0];
+                        }
+                    }
+
+                    const sesDosyasi = sozlukDetay?.phonetics?.find(p => p.audio)?.audio || '';
+                    const okunus = sozlukDetay?.phonetic || sozlukDetay?.phonetics?.find(p => p.text)?.text || '';
+
+                    setSonuc({
+                        aranan: arananKelime,
+                        anaCeviri,
+                        alternatifler,
+                        okunus,
+                        sesDosyasi,
+                        anlamlar: sozlukDetay?.meanings || []
+                    });
+                } catch (err) {
+                    setHata('Bağlantı hatası oluştu. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.');
+                } finally {
+                    setYukleniyor(false);
+                }
+            };
+
+            return (
+                <div className="max-w-3xl mx-auto p-4 sm:p-8">
+                    {/* Başlık */}
+                    <header className="text-center mb-6">
+                        <h1 className="text-3xl font-extrabold text-indigo-950 tracking-tight">
+                            Sözlük <span className="text-indigo-600">EN ⇄ TR</span>
+                        </h1>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Kelime türleri, tüm anlamlar, telaffuz ve örnek kullanımlar
+                        </p>
+                    </header>
+
+                    {/* Arama Kutusu */}
+                    <form onSubmit={ara} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-sm px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700">
+                                {yon === 'en-tr' ? 'İngilizce ➔ Türkçe' : 'Türkçe ➔ İngilizce'}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={yonDegistir}
+                                className="text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition"
+                            >
+                                ⇄ Dili Değiştir
+                            </button>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={kelime}
+                                onChange={(e) => setKelime(e.target.value)}
+                                placeholder={yon === 'en-tr' ? 'İngilizce bir kelime yazın (örn: run, book, light)...' : 'Türkçe bir kelime yazın (örn: koşmak, kitap, ışık)...'}
+                                className="w-full p-3 border border-slate-300 rounded-xl outline-none focus:border-indigo-500 text-base"
+                            />
+                            <button
+                                type="submit"
+                                disabled={yukleniyor}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl transition shrink-0"
+                            >
+                                {yukleniyor ? 'Aranıyor...' : 'Ara'}
+                            </button>
+                        </div>
+                    </form>
+
+                    {/* Hata Mesajı */}
+                    {hata && (
+                        <div className="mt-4 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl text-sm">
+                            {hata}
+                        </div>
+                    )}
+
+                    {/* Sözlük Sonuç Kartı */}
+                    {sonuc && (
+                        <div className="mt-6 space-y-4">
+                            {/* Ana Kelime ve Karşılıkları */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-slate-900 capitalize">{sonuc.aranan}</h2>
+                                        {sonuc.okunus && (
+                                            <span className="text-sm text-indigo-600 font-mono">{sonuc.okunus}</span>
+                                        )}
+                                    </div>
+                                    <button
+                                        onClick={() => sesCal(sonuc.sesDosyasi)}
+                                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 rounded-xl text-sm font-semibold transition"
+                                        title="Telaffuzu Dinle"
+                                    >
+                                        🔊 Dinle
+                                    </button>
+                                </div>
+
+                                <div className="mt-4">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Temel Karşılığı</span>
+                                    <p className="text-xl font-bold text-emerald-700 mt-0.5 capitalize">{sonuc.anaCeviri}</p>
+                                </div>
+
+                                {sonuc.alternatifler.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                                            Diğer Sözlük Anlamları / Kullanımlar
+                                        </span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {sonuc.alternatifler.map((alt, index) => (
+                                                <span
+                                                    key={index}
+                                                    onClick={() => { setKelime(alt); }}
+                                                    className="bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 cursor-pointer px-3 py-1 rounded-full text-sm transition"
+                                                >
+                                                    {alt}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Kelime Türlerine Göre Detaylı Sözlük Açıklamaları */}
+                            {sonuc.anlamlar.length > 0 && (
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+                                        Kelime Türleri ve Detaylı Tanımlar
+                                    </h3>
+
+                                    {sonuc.anlamlar.map((anlam, idx) => (
+                                        <div key={idx} className="border-l-4 border-indigo-500 pl-4 space-y-2">
+                                            <span className="inline-block bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded">
+                                                {turCevir[anlam.partOfSpeech] || anlam.partOfSpeech}
+                                            </span>
+
+                                            <ul className="space-y-2 text-sm text-slate-700">
+                                                {anlam.definitions.slice(0, 4).map((tanim, tIdx) => (
+                                                    <li key={tIdx} className="leading-relaxed">
+                                                        <span className="font-semibold text-slate-900">{tIdx + 1}. </span>
+                                                        {tanim.definition}
+                                                        {tanim.example && (
+                                                            <p className="text-slate-500 italic mt-0.5 pl-4">
+                                                                "{tanim.example}"
+                                                            </p>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ul>
+
+                                            {anlam.synonyms && anlam.synonyms.length > 0 && (
+                                                <div className="pt-1 text-xs text-slate-500">
+                                                    <span className="font-bold text-slate-700">Eş Anlamlılar: </span>
+                                                    {anlam.synonyms.slice(0, 6).join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SozlukUygulamasi />);
+    </script>
+</body>
+</html>
